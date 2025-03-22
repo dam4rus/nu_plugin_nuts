@@ -1,0 +1,12 @@
+[package]
+name = "nu_plugin_nuts"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1"
+async-nats = "0.39.0"
+nu-plugin = "0.102.0"
+nu-utils = "0.102.0"
+nu-protocol = { version = "0.102.0", features = ["plugin"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }

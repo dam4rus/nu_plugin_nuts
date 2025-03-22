@@ -1,0 +1,126 @@
+use anyhow::Context;
+use async_nats::{
+    Client, HeaderMap, HeaderName, HeaderValue,
+    header::{IntoHeaderName, IntoHeaderValue},
+};
+use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
+use nu_protocol::{
+    LabeledError, PipelineData, Record, ShellError, Signature, Span, SyntaxShape, Value,
+};
+use nu_utils::SharedCow;
+
+use crate::Nuts;
+
+#[derive(Debug, Default)]
+pub(crate) struct Publish;
+
+impl Publish {
+    fn publish_record(
+        plugin: &Nuts,
+        client: &Client,
+        subject: &String,
+        record: SharedCow<Record>,
+        internal_span: Span,
+    ) -> Result<(), LabeledError> {
+        let headers = if let Some(Value::Record { val: headers, .. }) = record.get("headers") {
+            let headers = headers
+                .iter()
+                .map(|(key, value)| {
+                    Ok((
+                        key.clone().into_header_name(),
+                        value.coerce_str().map(|value| value.into_header_value())?,
+                    ))
+                })
+                .collect::<Result<Vec<(HeaderName, HeaderValue)>, ShellError>>()?;
+            HeaderMap::from_iter(headers.into_iter())
+        } else {
+            HeaderMap::new()
+        };
+        let payload = record
+            .get("payload")
+            .cloned()
+            .ok_or_else(|| {
+                LabeledError::new("missing payload")
+                    .with_label("input record must contain a payload field", internal_span)
+            })?
+            .coerce_into_binary()?;
+
+        plugin
+            .runtime
+            .block_on(async move {
+                client
+                    .publish_with_headers(subject.clone(), headers, payload.into())
+                    .await
+                    .context("Failed to publish to NATS subject")
+            })
+            .map_err(|error| LabeledError::new(error.to_string()))?;
+        Ok(())
+    }
+
+    fn publish_value(
+        plugin: &Nuts,
+        client: &Client,
+        subject: &String,
+        value: &Value,
+    ) -> Result<(), LabeledError> {
+        let payload = value.clone().coerce_into_binary()?;
+        plugin
+            .runtime
+            .block_on(async move {
+                client
+                    .publish(subject.clone(), payload.into())
+                    .await
+                    .context("Failed to publish to NATS subject")
+            })
+            .map_err(|error| LabeledError::new(error.to_string()))?;
+        Ok(())
+    }
+}
+
+impl PluginCommand for Publish {
+    type Plugin = Nuts;
+
+    fn name(&self) -> &str {
+        "nuts pub"
+    }
+
+    fn signature(&self) -> Signature {
+        Signature::build(self.name()).required(
+            "subject",
+            SyntaxShape::String,
+            "Subject to publish to",
+        )
+    }
+
+    fn description(&self) -> &str {
+        "Publish to a subject"
+    }
+
+    fn run(
+        &self,
+        plugin: &Self::Plugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        let subject: String = call.req(0)?;
+        let client = plugin.nats.read().unwrap();
+        match client.as_ref() {
+            Some(client) => {
+                match input {
+                    PipelineData::Value(Value::Record { val, internal_span }, ..) => {
+                        Self::publish_record(plugin, client, &subject, val, internal_span)?
+                    }
+                    PipelineData::Value(value, ..) => {
+                        Self::publish_value(plugin, client, &subject, &value)?
+                    }
+                    _ => (),
+                }
+                Ok(PipelineData::Empty)
+            }
+            None => Err(LabeledError::new(
+                "Not connected to NATS server. Call `nuts connect` first",
+            )),
+        }
+    }
+}
