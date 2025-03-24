@@ -3,6 +3,7 @@ use async_nats::{
     Client, HeaderMap, HeaderName, HeaderValue,
     header::{IntoHeaderName, IntoHeaderValue},
 };
+use futures::future;
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
 use nu_protocol::{
     LabeledError, PipelineData, Record, ShellError, Signature, Span, SyntaxShape, Value,
@@ -15,8 +16,8 @@ use crate::Nuts;
 pub(crate) struct Publish;
 
 impl Publish {
-    fn publish_record(
-        plugin: &Nuts,
+    async fn publish_record(
+        _plugin: &Nuts,
         client: &Client,
         subject: &String,
         record: SharedCow<Record>,
@@ -45,34 +46,39 @@ impl Publish {
             })?
             .coerce_into_binary()?;
 
-        plugin
-            .runtime
-            .block_on(async move {
-                client
-                    .publish_with_headers(subject.clone(), headers, payload.into())
-                    .await
-                    .context("Failed to publish to NATS subject")
-            })
+        client
+            .publish_with_headers(subject.clone(), headers, payload.into())
+            .await
+            .context("Failed to publish to NATS subject")
             .map_err(|error| LabeledError::new(error.to_string()))?;
         Ok(())
     }
 
-    fn publish_value(
+    async fn publish_value(
         plugin: &Nuts,
         client: &Client,
         subject: &String,
-        value: &Value,
+        value: Value,
     ) -> Result<(), LabeledError> {
-        let payload = value.clone().coerce_into_binary()?;
-        plugin
-            .runtime
-            .block_on(async move {
+        match value {
+            Value::Record { val, internal_span } => {
+                Self::publish_record(plugin, client, subject, val, internal_span).await?
+            }
+            Value::List { vals, .. } => {
+                future::try_join_all(vals.into_iter().map(|value| async {
+                    Self::publish_value(plugin, client, subject, value).await
+                }))
+                .await?;
+            }
+            value => {
+                let payload = value.clone().coerce_into_binary()?;
                 client
                     .publish(subject.clone(), payload.into())
                     .await
                     .context("Failed to publish to NATS subject")
-            })
-            .map_err(|error| LabeledError::new(error.to_string()))?;
+                    .map_err(|error| LabeledError::new(error.to_string()))?;
+            }
+        }
         Ok(())
     }
 }
@@ -108,11 +114,15 @@ impl PluginCommand for Publish {
         match client.as_ref() {
             Some(client) => {
                 match input {
-                    PipelineData::Value(Value::Record { val, internal_span }, ..) => {
-                        Self::publish_record(plugin, client, &subject, val, internal_span)?
-                    }
-                    PipelineData::Value(value, ..) => {
-                        Self::publish_value(plugin, client, &subject, &value)?
+                    PipelineData::Value(value, ..) => plugin
+                        .runtime
+                        .block_on(Self::publish_value(plugin, client, &subject, value))?,
+                    PipelineData::ListStream(list_stream, ..) => {
+                        plugin.runtime.block_on(future::try_join_all(
+                            list_stream.into_iter().map(|value| async {
+                                Self::publish_value(plugin, client, &subject, value).await
+                            }),
+                        ))?;
                     }
                     _ => (),
                 }

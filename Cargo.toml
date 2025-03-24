@@ -10,3 +10,5 @@ nu-plugin = "0.102.0"
 nu-utils = "0.102.0"
 nu-protocol = { version = "0.102.0", features = ["plugin"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
+tokio-stream = "0.1.17"
+futures = "0.3.31"
