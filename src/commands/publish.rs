@@ -15,6 +15,58 @@ use crate::Nuts;
 #[derive(Debug, Default)]
 pub(crate) struct Publish;
 
+impl PluginCommand for Publish {
+    type Plugin = Nuts;
+
+    fn name(&self) -> &str {
+        "nuts pub"
+    }
+
+    fn signature(&self) -> Signature {
+        Signature::build(self.name()).required(
+            "subject",
+            SyntaxShape::String,
+            "Subject to publish to",
+        )
+    }
+
+    fn description(&self) -> &str {
+        "Publish to a subject"
+    }
+
+    fn run(
+        &self,
+        plugin: &Self::Plugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        let subject: String = call.req(0)?;
+        let client = plugin.nats.read().unwrap();
+        match client.as_ref() {
+            Some(client) => {
+                match input {
+                    PipelineData::Value(value, ..) => plugin
+                        .runtime
+                        .block_on(Self::publish_value(plugin, client, &subject, value))?,
+                    PipelineData::ListStream(list_stream, ..) => {
+                        plugin.runtime.block_on(future::try_join_all(
+                            list_stream.into_iter().map(|value| async {
+                                Self::publish_value(plugin, client, &subject, value).await
+                            }),
+                        ))?;
+                    }
+                    _ => (),
+                }
+                Ok(PipelineData::Empty)
+            }
+            None => Err(LabeledError::new(
+                "Not connected to NATS server. Call `nuts connect` first",
+            )),
+        }
+    }
+}
+
 impl Publish {
     async fn publish_record(
         _plugin: &Nuts,
@@ -80,57 +132,5 @@ impl Publish {
             }
         }
         Ok(())
-    }
-}
-
-impl PluginCommand for Publish {
-    type Plugin = Nuts;
-
-    fn name(&self) -> &str {
-        "nuts pub"
-    }
-
-    fn signature(&self) -> Signature {
-        Signature::build(self.name()).required(
-            "subject",
-            SyntaxShape::String,
-            "Subject to publish to",
-        )
-    }
-
-    fn description(&self) -> &str {
-        "Publish to a subject"
-    }
-
-    fn run(
-        &self,
-        plugin: &Self::Plugin,
-        _engine: &EngineInterface,
-        call: &EvaluatedCall,
-        input: PipelineData,
-    ) -> Result<PipelineData, LabeledError> {
-        let subject: String = call.req(0)?;
-        let client = plugin.nats.read().unwrap();
-        match client.as_ref() {
-            Some(client) => {
-                match input {
-                    PipelineData::Value(value, ..) => plugin
-                        .runtime
-                        .block_on(Self::publish_value(plugin, client, &subject, value))?,
-                    PipelineData::ListStream(list_stream, ..) => {
-                        plugin.runtime.block_on(future::try_join_all(
-                            list_stream.into_iter().map(|value| async {
-                                Self::publish_value(plugin, client, &subject, value).await
-                            }),
-                        ))?;
-                    }
-                    _ => (),
-                }
-                Ok(PipelineData::Empty)
-            }
-            None => Err(LabeledError::new(
-                "Not connected to NATS server. Call `nuts connect` first",
-            )),
-        }
     }
 }

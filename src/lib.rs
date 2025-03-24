@@ -3,7 +3,7 @@ mod commands;
 use std::sync::{Arc, RwLock};
 
 use async_nats::Client;
-use commands::{connect::Connect, publish::Publish};
+use commands::{connect::Connect, kv, publish::Publish};
 use nu_plugin::Plugin;
 use tokio::runtime::Runtime;
 
@@ -28,6 +28,10 @@ impl Plugin for Nuts {
     }
 
     fn commands(&self) -> Vec<Box<dyn nu_plugin::PluginCommand<Plugin = Self>>> {
-        vec![Box::new(Connect::default()), Box::new(Publish::default())]
+        vec![
+            Box::new(Connect::default()),
+            Box::new(Publish::default()),
+            Box::new(kv::List),
+        ]
     }
 }
