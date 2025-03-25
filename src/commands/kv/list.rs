@@ -1,19 +1,12 @@
-use std::sync::{Arc, atomic::AtomicBool};
+use async_nats::jetstream::{self};
+use futures::TryStreamExt;
 
-use async_nats::{
-    header::IntoHeaderName,
-    jetstream::{self},
-};
-use futures::{StreamExt, TryStreamExt};
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
-use nu_protocol::{
-    IntoValue, LabeledError, ListStream, PipelineData, Signals, Signature, Span, SyntaxShape,
-};
-use tokio::sync::mpsc;
+use nu_protocol::{IntoValue, LabeledError, PipelineData, Signature, SyntaxShape};
 
 use crate::Nuts;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct List;
 
 impl PluginCommand for List {
@@ -47,38 +40,19 @@ impl PluginCommand for List {
         match client.as_ref() {
             Some(client) => {
                 let jetstream = jetstream::new(client.clone());
-                let (tx, mut rx) = mpsc::unbounded_channel();
-                plugin.runtime.spawn(async move {
-                    let bucket = jetstream
+                let keys = plugin.runtime.block_on(async move {
+                    jetstream
                         .get_key_value(bucket)
                         .await
-                        .map_err(|error| LabeledError::new(error.to_string()))
-                        .unwrap();
-                    let mut keys = bucket
+                        .map_err(|error| LabeledError::new(error.to_string()))?
                         .keys()
                         .await
+                        .map_err(|error| LabeledError::new(error.to_string()))?
+                        .try_collect::<Vec<String>>()
+                        .await
                         .map_err(|error| LabeledError::new(error.to_string()))
-                        .unwrap();
-                    while let Some(key) = keys.next().await {
-                        match key {
-                            Ok(key) => tx.send(key).unwrap(),
-                            Err(_) => break,
-                        }
-                    }
-                });
-                Ok(PipelineData::ListStream(
-                    ListStream::new(
-                        {
-                            let handle = plugin.runtime.handle().clone();
-                            std::iter::repeat_with(move || handle.block_on(rx.recv()))
-                        }
-                        .take_while(|item| item.is_some())
-                        .map(|item| item.unwrap().into_value(Span::unknown())),
-                        call.head,
-                        Signals::new(Arc::new(AtomicBool::new(false))),
-                    ),
-                    None,
-                ))
+                })?;
+                Ok(PipelineData::Value(keys.into_value(call.head), None))
             }
             None => Err(LabeledError::new(
                 "Not connected to NATS server. Call `nuts connect` first",

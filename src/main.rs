@@ -4,8 +4,10 @@ use nu_plugin_nuts::Nuts;
 use tokio::runtime::Runtime;
 
 fn main() -> Result<()> {
-    Ok(serve_plugin(
+    env_logger::init();
+    serve_plugin(
         &Nuts::new(Runtime::new().context("Failed to create tokio runtime")?),
         MsgPackSerializer {},
-    ))
+    );
+    Ok(())
 }

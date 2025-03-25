@@ -4,7 +4,7 @@ use nu_protocol::{LabeledError, PipelineData, Signature, SyntaxShape};
 
 use crate::Nuts;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct Connect;
 
 impl PluginCommand for Connect {

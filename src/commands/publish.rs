@@ -12,7 +12,7 @@ use nu_utils::SharedCow;
 
 use crate::Nuts;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct Publish;
 
 impl PluginCommand for Publish {
@@ -71,7 +71,7 @@ impl Publish {
     async fn publish_record(
         _plugin: &Nuts,
         client: &Client,
-        subject: &String,
+        subject: &str,
         record: SharedCow<Record>,
         internal_span: Span,
     ) -> Result<(), LabeledError> {
@@ -99,7 +99,7 @@ impl Publish {
             .coerce_into_binary()?;
 
         client
-            .publish_with_headers(subject.clone(), headers, payload.into())
+            .publish_with_headers(subject.to_owned(), headers, payload.into())
             .await
             .context("Failed to publish to NATS subject")
             .map_err(|error| LabeledError::new(error.to_string()))?;
