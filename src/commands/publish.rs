@@ -45,19 +45,21 @@ impl PluginCommand for Publish {
         let client = plugin.nats.read().unwrap();
         match client.as_ref() {
             Some(client) => {
-                match input {
-                    PipelineData::Value(value, ..) => plugin
-                        .runtime
-                        .block_on(Self::publish_value(plugin, client, &subject, value))?,
-                    PipelineData::ListStream(list_stream, ..) => {
-                        plugin.runtime.block_on(future::try_join_all(
-                            list_stream.into_iter().map(|value| async {
-                                Self::publish_value(plugin, client, &subject, value).await
-                            }),
-                        ))?;
+                plugin.runtime.block_on(async move {
+                    match input {
+                        PipelineData::Value(value, ..) => {
+                            Self::publish_value(client, &subject, value).await?
+                        }
+                        PipelineData::ListStream(list_stream, ..) => {
+                            future::try_join_all(list_stream.into_iter().map(|value| async {
+                                Self::publish_value(client, &subject, value).await
+                            }))
+                            .await?;
+                        }
+                        _ => (),
                     }
-                    _ => (),
-                }
+                    Ok::<(), LabeledError>(())
+                })?;
                 Ok(PipelineData::Empty)
             }
             None => Err(LabeledError::new(
@@ -69,7 +71,6 @@ impl PluginCommand for Publish {
 
 impl Publish {
     async fn publish_record(
-        _plugin: &Nuts,
         client: &Client,
         subject: &str,
         record: SharedCow<Record>,
@@ -107,19 +108,19 @@ impl Publish {
     }
 
     async fn publish_value(
-        plugin: &Nuts,
         client: &Client,
         subject: &String,
         value: Value,
     ) -> Result<(), LabeledError> {
         match value {
             Value::Record { val, internal_span } => {
-                Self::publish_record(plugin, client, subject, val, internal_span).await?
+                Self::publish_record(client, subject, val, internal_span).await?
             }
             Value::List { vals, .. } => {
-                future::try_join_all(vals.into_iter().map(|value| async {
-                    Self::publish_value(plugin, client, subject, value).await
-                }))
+                future::try_join_all(
+                    vals.into_iter()
+                        .map(|value| async { Self::publish_value(client, subject, value).await }),
+                )
                 .await?;
             }
             value => {
