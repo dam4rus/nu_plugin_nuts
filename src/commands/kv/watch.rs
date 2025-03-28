@@ -1,40 +1,41 @@
+use async_nats::jetstream;
 use futures::StreamExt;
 use log::info;
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
 use nu_protocol::{
-    Category, IntoValue, LabeledError, ListStream, PipelineData, Signals, Signature, Span,
-    SyntaxShape, Type,
+    IntoValue, LabeledError, ListStream, PipelineData, Record, ShellError, Signals, Signature,
+    Span, SyntaxShape, Type,
 };
 use tokio::{select, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 
 use crate::Nuts;
 
-pub(crate) struct Subscribe;
+pub(crate) struct Watch;
 
-impl PluginCommand for Subscribe {
+impl PluginCommand for Watch {
     type Plugin = Nuts;
 
     fn name(&self) -> &str {
-        "nuts sub"
+        "nuts kv watch"
     }
 
     fn signature(&self) -> Signature {
         Signature::build(self.name())
-            .required("subject", SyntaxShape::String, "Subject to consume from")
-            .switch("binary", "Do not decode binary as string", Some('b'))
-            .input_output_type(Type::Any, Type::String)
-            .input_output_type(Type::Any, Type::Binary)
-            .category(Category::Generators)
+            .required("bucket", SyntaxShape::String, "Bucket to watch")
+            .optional("key", SyntaxShape::String, "The key to watch")
+            .input_output_type(Type::Any, Type::List(Type::String.into()))
             .search_terms(vec![
-                "nats".to_string(),
-                "sub".to_string(),
-                "subscribe".to_string(),
+                "nats".to_owned(),
+                "kv".to_owned(),
+                "key".to_owned(),
+                "value".to_owned(),
+                "watch".to_owned(),
             ])
     }
 
     fn description(&self) -> &str {
-        "Consume from a subject"
+        "Watch a bucket or key in a bucket"
     }
 
     fn run(
@@ -44,8 +45,8 @@ impl PluginCommand for Subscribe {
         call: &EvaluatedCall,
         _input: PipelineData,
     ) -> Result<PipelineData, LabeledError> {
-        let subject: String = call.req(0)?;
-        let binary_output = call.has_flag("binary")?;
+        let bucket: String = call.req(0)?;
+        let key: Option<String> = call.opt(1)?;
         let client = plugin.nats.read().unwrap();
         match client.as_ref() {
             Some(client) => {
@@ -54,13 +55,22 @@ impl PluginCommand for Subscribe {
                     let client = client.clone();
                     let engine = engine.clone();
                     async move {
-                        info!("Spawned subscription");
-                        let mut subscription = client
-                            .subscribe(subject.clone())
+                        let jetstream = jetstream::new(client);
+                        let key_value = jetstream
+                            .get_key_value(bucket)
                             .await
-                            .unwrap_or_else(|_| panic!("Failed to subscribe to subject {}", subject));
+                            .unwrap();
+                        let mut watch = match key {
+                            Some(key) => key_value
+                                .watch(key)
+                                .await
+                                .unwrap(),
+                            None => key_value
+                                .watch_all()
+                                .await
+                            .unwrap(),
+                        };
 
-                        info!("Subscribed");
                         let cancellation = CancellationToken::new();
                         let _signal_guard = engine.register_signal_handler(Box::new({
                             let cancellation = cancellation.clone();
@@ -69,15 +79,16 @@ impl PluginCommand for Subscribe {
                                 cancellation.cancel();
                             }
                         })).expect("Failed to register signal handler");
+
                         loop {
                             select! {
                                 _ = cancellation.cancelled() => {
                                     break;
                                 }
-                                Some(message) = subscription.next() => {
-                                    tx.send(message).expect("Failed to send message through channel");
+                                Some(entry) = watch.next() => {
+                                    tx.send(entry).expect("Failed to send key value entry through channel");
                                 }
-                            };
+                            }
                         }
                     }
                 });
@@ -85,13 +96,18 @@ impl PluginCommand for Subscribe {
                 let handle = plugin.runtime.handle().clone();
                 let stream_iter = std::iter::repeat_with(move || handle.block_on(rx.recv()))
                     .map_while(move |message| {
-                        message.map(|message| {
-                            if binary_output {
-                                message.payload.into_value(Span::unknown())
-                            } else {
-                                String::from_utf8_lossy(&message.payload)
-                                    .into_value(Span::unknown())
-                            }
+                        message.map(|message| match message {
+                            Ok(entry) => Record::from_iter([(
+                                entry.key,
+                                String::from_utf8_lossy(&entry.value).into_value(Span::unknown()),
+                            )])
+                            .into_value(Span::unknown()),
+                            Err(error) => IntoValue::into_value(
+                                ShellError::LabeledError(
+                                    LabeledError::new(error.to_string()).into(),
+                                ),
+                                Span::unknown(),
+                            ),
                         })
                     });
 
