@@ -2,7 +2,8 @@ use futures::StreamExt;
 use log::info;
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
 use nu_protocol::{
-    IntoValue, LabeledError, ListStream, PipelineData, Signals, Signature, Span, SyntaxShape,
+    Category, IntoValue, LabeledError, ListStream, PipelineData, Signals, Signature, Span,
+    SyntaxShape, Type,
 };
 use tokio::{select, sync::mpsc};
 use tokio_util::sync::CancellationToken;
@@ -19,11 +20,17 @@ impl PluginCommand for Subscribe {
     }
 
     fn signature(&self) -> Signature {
-        Signature::build(self.name()).required(
-            "subject",
-            SyntaxShape::String,
-            "Subject to consume from",
-        )
+        Signature::build(self.name())
+            .required("subject", SyntaxShape::String, "Subject to consume from")
+            .switch("binary", "Do not decode binary as string", Some('b'))
+            .input_output_type(Type::Any, Type::String)
+            .input_output_type(Type::Any, Type::Binary)
+            .category(Category::Generators)
+            .search_terms(vec![
+                "nats".to_string(),
+                "sub".to_string(),
+                "subscribe".to_string(),
+            ])
     }
 
     fn description(&self) -> &str {
@@ -38,6 +45,7 @@ impl PluginCommand for Subscribe {
         _input: PipelineData,
     ) -> Result<PipelineData, LabeledError> {
         let subject: String = call.req(0)?;
+        let binary_output = call.has_flag("binary")?;
         let client = plugin.nats.read().unwrap();
         match client.as_ref() {
             Some(client) => {
@@ -77,9 +85,14 @@ impl PluginCommand for Subscribe {
 
                 let handle = plugin.runtime.handle().clone();
                 let stream_iter = std::iter::repeat_with(move || handle.block_on(rx.recv()))
-                    .map_while(|message| {
+                    .map_while(move |message| {
                         message.map(|message| {
-                            String::from_utf8_lossy(&message.payload).into_value(Span::unknown())
+                            if binary_output {
+                                message.payload.into_value(Span::unknown())
+                            } else {
+                                String::from_utf8_lossy(&message.payload)
+                                    .into_value(Span::unknown())
+                            }
                         })
                     });
 

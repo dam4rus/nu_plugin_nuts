@@ -6,7 +6,7 @@ use async_nats::{
 use futures::future;
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
 use nu_protocol::{
-    LabeledError, PipelineData, Record, ShellError, Signature, Span, SyntaxShape, Value,
+    LabeledError, PipelineData, Record, ShellError, Signature, Span, SyntaxShape, Type, Value,
 };
 use nu_utils::SharedCow;
 
@@ -23,11 +23,43 @@ impl PluginCommand for Publish {
     }
 
     fn signature(&self) -> Signature {
-        Signature::build(self.name()).required(
-            "subject",
-            SyntaxShape::String,
-            "Subject to publish to",
-        )
+        let record_with_string_payload_type = Type::Record(
+            [
+                ("headers".to_owned(), Type::record()),
+                ("payload".to_owned(), Type::String),
+            ]
+            .into(),
+        );
+        let record_with_binary_payload_type = Type::Record(
+            [
+                ("headers".to_owned(), Type::record()),
+                ("payload".to_owned(), Type::Binary),
+            ]
+            .into(),
+        );
+        Signature::build(self.name())
+            .required("subject", SyntaxShape::String, "Subject to publish to")
+            .input_output_types(vec![
+                (record_with_string_payload_type.clone(), Type::Nothing),
+                (record_with_binary_payload_type.clone(), Type::Nothing),
+                (Type::String, Type::Nothing),
+                (Type::Binary, Type::Nothing),
+                (
+                    Type::List(record_with_string_payload_type.into()),
+                    Type::Nothing,
+                ),
+                (
+                    Type::List(record_with_binary_payload_type.into()),
+                    Type::Nothing,
+                ),
+                (Type::List(Type::String.into()), Type::Nothing),
+                (Type::List(Type::Binary.into()), Type::Nothing),
+            ])
+            .search_terms(vec![
+                "nats".to_string(),
+                "pub".to_string(),
+                "publish".to_string(),
+            ])
     }
 
     fn description(&self) -> &str {

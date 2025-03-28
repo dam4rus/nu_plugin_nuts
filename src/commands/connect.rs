@@ -15,7 +15,7 @@ impl PluginCommand for Connect {
     }
 
     fn signature(&self) -> Signature {
-        Signature::build(self.name()).required("url", SyntaxShape::String, "Connection URL")
+        Signature::build(self.name()).optional("url", SyntaxShape::String, "Connection URL")
     }
 
     fn description(&self) -> &str {
@@ -29,7 +29,7 @@ impl PluginCommand for Connect {
         call: &EvaluatedCall,
         input: PipelineData,
     ) -> Result<PipelineData, LabeledError> {
-        let argument: String = call.req(0)?;
+        let argument: String = call.opt(0)?.unwrap_or_else(|| String::from("localhost"));
         let client = plugin
             .runtime
             .block_on(async move {

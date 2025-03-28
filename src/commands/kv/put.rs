@@ -1,7 +1,7 @@
 use async_nats::jetstream::{self, kv::Store};
 use futures::future;
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
-use nu_protocol::{LabeledError, PipelineData, Record, Signature, SyntaxShape, Value};
+use nu_protocol::{LabeledError, PipelineData, Record, Signature, SyntaxShape, Type, Value};
 
 use crate::Nuts;
 
@@ -15,7 +15,19 @@ impl PluginCommand for Put {
     }
 
     fn signature(&self) -> Signature {
-        Signature::build(self.name()).required("bucket", SyntaxShape::String, "Bucket to put to")
+        Signature::build(self.name())
+            .required("bucket", SyntaxShape::String, "Bucket to put to")
+            .input_output_types(vec![
+                (Type::record(), Type::Nothing),
+                (Type::List(Type::record().into()), Type::Nothing),
+            ])
+            .search_terms(vec![
+                "nats".to_owned(),
+                "kv".to_owned(),
+                "key".to_owned(),
+                "value".to_owned(),
+                "put".to_owned(),
+            ])
     }
 
     fn description(&self) -> &str {
