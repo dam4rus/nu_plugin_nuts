@@ -36,6 +36,7 @@ impl Plugin for Nuts {
             Box::new(kv::Get),
             Box::new(kv::Put),
             Box::new(kv::Watch),
+            Box::new(kv::Delete),
         ]
     }
 }
