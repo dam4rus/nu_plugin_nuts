@@ -33,6 +33,7 @@ impl Plugin for Nuts {
             Box::new(Publish),
             Box::new(Subscribe),
             Box::new(kv::List),
+            Box::new(kv::Get),
             Box::new(kv::Put),
             Box::new(kv::Watch),
         ]
