@@ -25,17 +25,14 @@ impl PluginCommand for Get {
             .required("key", SyntaxShape::String, "The key to get the value of")
             .switch("binary", "Return the value in binary format", Some('b'))
             .input_output_types(vec![(Type::Any, Type::String), (Type::Any, Type::Binary)])
-            .search_terms(vec![
-                "nats".to_owned(),
-                "kv".to_owned(),
-                "key".to_string(),
-                "value".to_string(),
-                "get".to_owned(),
-            ])
     }
 
     fn description(&self) -> &str {
         "Get the value of a key in a bucket"
+    }
+
+    fn search_terms(&self) -> Vec<&str> {
+        vec!["nats", "kv", "key", "value", "get"]
     }
 
     fn run(

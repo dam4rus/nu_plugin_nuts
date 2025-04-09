@@ -79,17 +79,20 @@ impl PluginCommand for Delete {
                                     .delete_key_value(bucket)
                                     .await
                                     .map_err(|error| LabeledError::new(error.to_string()))?;
-                                ()
                             }
                             PipelineData::Value(value, ..) => {
-                                delete_value(&bucket, jetstream, value).await?;
+                                Self::delete_value(&bucket, jetstream, value).await?;
                             }
                             PipelineData::ListStream(list_stream, ..) => {
-                                future::try_join_all(list_stream.into_iter().map(|value| {
-                                    let bucket = bucket.clone();
-                                    let jetstream = jetstream.clone();
-                                    async move { delete_value(&bucket, jetstream, value).await }
-                                }))
+                                future::try_join_all(
+                                    list_stream.into_iter().map(|value| {
+                                        let bucket = bucket.clone();
+                                        let jetstream = jetstream.clone();
+                                        async move {
+                                            Self::delete_value(&bucket, jetstream, value).await
+                                        }
+                                    }),
+                                )
                                 .await?;
                             }
                             _ => (),
@@ -106,51 +109,54 @@ impl PluginCommand for Delete {
     }
 }
 
-async fn delete_value(
-    bucket: &str,
-    jetstream: jetstream::Context,
-    value: Value,
-) -> Result<(), LabeledError> {
-    Ok(match value {
-        Value::String { val, internal_span } => jetstream
-            .get_key_value(bucket)
-            .await
-            .map_err(|error| LabeledError::new(error.to_string()))?
-            .delete(val)
-            .await
-            .map_err(|error| {
-                LabeledError::new(error.to_string())
-                    .with_label("with key origiting from here", internal_span)
-            })?,
-        Value::List {
-            vals,
-            internal_span,
-        } => {
-            let key_value = Arc::new(
-                jetstream
-                    .get_key_value(bucket)
-                    .await
-                    .map_err(|error| LabeledError::new(error.to_string()))?,
-            );
-            future::try_join_all(vals.iter().map(|value| {
-                let key_value = key_value.clone();
-                async move {
-                    if let Value::String { val, .. } = value {
-                        key_value.delete(val).await
-                    } else {
-                        unreachable!("Invalid list item type")
+impl Delete {
+    async fn delete_value(
+        bucket: &str,
+        jetstream: jetstream::Context,
+        value: Value,
+    ) -> Result<(), LabeledError> {
+        match value {
+            Value::String { val, internal_span } => jetstream
+                .get_key_value(bucket)
+                .await
+                .map_err(|error| LabeledError::new(error.to_string()))?
+                .delete(val)
+                .await
+                .map_err(|error| {
+                    LabeledError::new(error.to_string())
+                        .with_label("with key origiting from here", internal_span)
+                })?,
+            Value::List {
+                vals,
+                internal_span,
+            } => {
+                let key_value = Arc::new(
+                    jetstream
+                        .get_key_value(bucket)
+                        .await
+                        .map_err(|error| LabeledError::new(error.to_string()))?,
+                );
+                future::try_join_all(vals.iter().map(|value| {
+                    let key_value = key_value.clone();
+                    async move {
+                        if let Value::String { val, .. } = value {
+                            key_value.delete(val).await
+                        } else {
+                            unreachable!("Invalid list item type")
+                        }
                     }
-                }
-            }))
-            .await
-            .map_err(|error| {
-                LabeledError::new(error.to_string())
-                    .with_label("with value originating from here", internal_span)
-            })?;
+                }))
+                .await
+                .map_err(|error| {
+                    LabeledError::new(error.to_string())
+                        .with_label("with value originating from here", internal_span)
+                })?;
+            }
+            _ => {
+                return Err(LabeledError::new("Invalid value type")
+                    .with_label("originating from here", value.span()));
+            }
         }
-        _ => {
-            return Err(LabeledError::new("Invalid value type")
-                .with_label("originating from here", value.span()));
-        }
-    })
+        Ok(())
+    }
 }

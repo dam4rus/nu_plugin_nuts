@@ -2,7 +2,7 @@ use futures::StreamExt;
 use log::info;
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
 use nu_protocol::{
-    Category, IntoValue, LabeledError, ListStream, PipelineData, Signals, Signature, Span,
+    Category, Example, IntoValue, LabeledError, ListStream, PipelineData, Signals, Signature, Span,
     SyntaxShape, Type,
 };
 use tokio::{select, sync::mpsc};
@@ -26,15 +26,22 @@ impl PluginCommand for Subscribe {
             .input_output_type(Type::Any, Type::String)
             .input_output_type(Type::Any, Type::Binary)
             .category(Category::Generators)
-            .search_terms(vec![
-                "nats".to_string(),
-                "sub".to_string(),
-                "subscribe".to_string(),
-            ])
     }
 
     fn description(&self) -> &str {
         "Consume from a subject"
+    }
+
+    fn search_terms(&self) -> Vec<&str> {
+        vec!["nats", "sub", "subscribe"]
+    }
+
+    fn examples(&self) -> Vec<Example> {
+        vec![Example {
+            example: "nuts sub mysubject",
+            description: "Subscribe to a subject",
+            result: Some(["mymessage".into_value(Span::unknown())].into_value(Span::unknown())),
+        }]
     }
 
     fn run(

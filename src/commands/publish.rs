@@ -6,7 +6,8 @@ use async_nats::{
 use futures::future;
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
 use nu_protocol::{
-    LabeledError, PipelineData, Record, ShellError, Signature, Span, SyntaxShape, Type, Value,
+    Example, LabeledError, PipelineData, Record, ShellError, Signature, Span, SyntaxShape, Type,
+    Value,
 };
 use nu_utils::SharedCow;
 
@@ -40,10 +41,12 @@ impl PluginCommand for Publish {
         Signature::build(self.name())
             .required("subject", SyntaxShape::String, "Subject to publish to")
             .input_output_types(vec![
-                (record_with_string_payload_type.clone(), Type::Nothing),
-                (record_with_binary_payload_type.clone(), Type::Nothing),
                 (Type::String, Type::Nothing),
                 (Type::Binary, Type::Nothing),
+                (record_with_string_payload_type.clone(), Type::Nothing),
+                (record_with_binary_payload_type.clone(), Type::Nothing),
+                (Type::List(Type::String.into()), Type::Nothing),
+                (Type::List(Type::Binary.into()), Type::Nothing),
                 (
                     Type::List(record_with_string_payload_type.into()),
                     Type::Nothing,
@@ -52,18 +55,40 @@ impl PluginCommand for Publish {
                     Type::List(record_with_binary_payload_type.into()),
                     Type::Nothing,
                 ),
-                (Type::List(Type::String.into()), Type::Nothing),
-                (Type::List(Type::Binary.into()), Type::Nothing),
-            ])
-            .search_terms(vec![
-                "nats".to_string(),
-                "pub".to_string(),
-                "publish".to_string(),
             ])
     }
 
     fn description(&self) -> &str {
         "Publish to a subject"
+    }
+
+    fn search_terms(&self) -> Vec<&str> {
+        vec!["nats", "pub", "publish"]
+    }
+
+    fn examples(&self) -> Vec<Example> {
+        vec![
+            Example {
+                example: "'my message' | nuts pub subject",
+                description: "Publish a string message",
+                result: None,
+            },
+            Example {
+                example: "{headers: {'Content-Type': 'text/plain'}, payload: 'my message'} | nuts pub subject",
+                description: "Publish a message with headers",
+                result: None,
+            },
+            Example {
+                example: "['my message', 'my other message'] | nuts pub subject",
+                description: "Publish multiple string messages",
+                result: None,
+            },
+            Example {
+                example: "[{headers: {'Content-Type': 'text/plain'}, payload: 'my message'}, {headers: {'Content-Type': 'text/plain'}, payload: 'my other message'}] | nuts pub subject",
+                description: "Publish multiple messages with headers",
+                result: None,
+            },
+        ]
     }
 
     fn run(
@@ -79,6 +104,12 @@ impl PluginCommand for Publish {
             Some(client) => {
                 plugin.runtime.block_on(async move {
                     match input {
+                        PipelineData::Value(Value::List { vals, .. }, ..) => {
+                            future::try_join_all(vals.into_iter().map(|value| async {
+                                Self::publish_value(client, &subject, value).await
+                            }))
+                            .await?;
+                        }
                         PipelineData::Value(value, ..) => {
                             Self::publish_value(client, &subject, value).await?
                         }
@@ -141,24 +172,17 @@ impl Publish {
 
     async fn publish_value(
         client: &Client,
-        subject: &String,
+        subject: &str,
         value: Value,
     ) -> Result<(), LabeledError> {
         match value {
             Value::Record { val, internal_span } => {
                 Self::publish_record(client, subject, val, internal_span).await?
             }
-            Value::List { vals, .. } => {
-                future::try_join_all(
-                    vals.into_iter()
-                        .map(|value| async { Self::publish_value(client, subject, value).await }),
-                )
-                .await?;
-            }
             value => {
                 let payload = value.clone().coerce_into_binary()?;
                 client
-                    .publish(subject.clone(), payload.into())
+                    .publish(subject.to_owned(), payload.into())
                     .await
                     .context("Failed to publish to NATS subject")
                     .map_err(|error| LabeledError::new(error.to_string()))?;

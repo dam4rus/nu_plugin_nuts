@@ -2,7 +2,9 @@ use async_nats::jetstream::{self};
 use futures::TryStreamExt;
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
-use nu_protocol::{IntoValue, LabeledError, PipelineData, Signature, SyntaxShape, Type};
+use nu_protocol::{
+    Example, IntoValue, LabeledError, PipelineData, Signature, Span, SyntaxShape, Type,
+};
 
 use crate::Nuts;
 
@@ -20,17 +22,29 @@ impl PluginCommand for List {
         Signature::build(self.name())
             .optional("bucket", SyntaxShape::String, "Bucket to list keys for")
             .input_output_type(Type::Any, Type::List(Type::String.into()))
-            .search_terms(vec![
-                "nats".to_owned(),
-                "kv".to_owned(),
-                "key".to_owned(),
-                "value".to_owned(),
-                "list".to_owned(),
-            ])
     }
 
     fn description(&self) -> &str {
         "List buckets or keys in a bucket"
+    }
+
+    fn search_terms(&self) -> Vec<&str> {
+        vec!["nats", "kv", "key", "value", "list"]
+    }
+
+    fn examples(&self) -> Vec<Example> {
+        vec![
+            Example {
+                example: "nuts kv list",
+                description: "List all buckets",
+                result: Some(["mybucket".into_value(Span::unknown())].into_value(Span::unknown())),
+            },
+            Example {
+                example: "nuts kv list mybucket",
+                description: "List all keys in a bucket",
+                result: Some(["mykey".into_value(Span::unknown())].into_value(Span::unknown())),
+            },
+        ]
     }
 
     fn run(
@@ -60,12 +74,7 @@ impl PluginCommand for List {
                         None => jetstream
                             .stream_names()
                             .try_filter_map(|name| async move {
-                                let result = if name.starts_with("KV_") {
-                                    Some(name[3..].to_owned())
-                                } else {
-                                    None
-                                };
-                                Ok(result)
+                                Ok(name.strip_prefix("KV_").map(String::from))
                             })
                             .try_collect::<Vec<String>>()
                             .await

@@ -1,7 +1,9 @@
 use async_nats::jetstream::{self, kv::Store};
 use futures::future;
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
-use nu_protocol::{LabeledError, PipelineData, Record, Signature, SyntaxShape, Type, Value};
+use nu_protocol::{
+    Example, LabeledError, PipelineData, Record, Signature, SyntaxShape, Type, Value,
+};
 
 use crate::Nuts;
 
@@ -17,27 +19,29 @@ impl PluginCommand for Put {
     fn signature(&self) -> Signature {
         Signature::build(self.name())
             .required("bucket", SyntaxShape::String, "Bucket to put to")
-            .input_output_types(vec![
-                (Type::record(), Type::Nothing),
-                (Type::List(Type::record().into()), Type::Nothing),
-            ])
-            .search_terms(vec![
-                "nats".to_owned(),
-                "kv".to_owned(),
-                "key".to_owned(),
-                "value".to_owned(),
-                "put".to_owned(),
-            ])
+            .input_output_type(Type::record(), Type::Nothing)
     }
 
     fn description(&self) -> &str {
         "Put values into a key value bucket"
     }
 
+    fn search_terms(&self) -> Vec<&str> {
+        vec!["nats", "kv", "key", "value", "put"]
+    }
+
+    fn examples(&self) -> Vec<Example> {
+        vec![Example {
+            example: "{key: value, otherkey: othervalue} | nuts kv put mybucket",
+            description: "Put all key value pairs in the record into a bucket",
+            result: None,
+        }]
+    }
+
     fn run(
         &self,
         plugin: &Self::Plugin,
-        engine: &EngineInterface,
+        _engine: &EngineInterface,
         call: &EvaluatedCall,
         input: PipelineData,
     ) -> Result<PipelineData, LabeledError> {
@@ -50,20 +54,10 @@ impl PluginCommand for Put {
                         .get_key_value(bucket)
                         .await
                         .map_err(|error| LabeledError::new(error.to_string()))?;
-                    match input {
-                        PipelineData::Value(value, _) => {
-                            Self::put_value(engine, call, &store, value)
-                                .await
-                                .map_err(|error| LabeledError::new(error.to_string()))?;
-                        }
-                        PipelineData::ListStream(value, _) => {
-                            future::try_join_all(value.into_iter().map(|value| async {
-                                Self::put_value(engine, call, &store, value).await
-                            }))
+                    if let PipelineData::Value(value, _) = input {
+                        Self::put_value(&store, value)
                             .await
                             .map_err(|error| LabeledError::new(error.to_string()))?;
-                        }
-                        _ => (),
                     }
                     Ok::<(), LabeledError>(())
                 })?;
@@ -77,12 +71,7 @@ impl PluginCommand for Put {
 }
 
 impl Put {
-    async fn put_value(
-        engine: &EngineInterface,
-        call: &EvaluatedCall,
-        store: &Store,
-        value: Value,
-    ) -> Result<(), LabeledError> {
+    async fn put_value(store: &Store, value: Value) -> Result<(), LabeledError> {
         match value {
             Value::Record { val, .. } => {
                 future::try_join_all(Record::clone(&val).into_iter().map(
@@ -94,14 +83,6 @@ impl Put {
                     },
                 ))
                 .await?;
-            }
-            Value::List { vals, .. } => {
-                future::try_join_all(
-                    vals.into_iter()
-                        .map(|value| async { Self::put_value(engine, call, store, value).await }),
-                )
-                .await
-                .map_err(|error| LabeledError::new(error.to_string()))?;
             }
             value => {
                 return Err(LabeledError::new("input must be a record")

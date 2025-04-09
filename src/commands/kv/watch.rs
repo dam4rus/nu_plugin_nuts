@@ -3,8 +3,8 @@ use futures::StreamExt;
 use log::info;
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
 use nu_protocol::{
-    IntoValue, LabeledError, ListStream, PipelineData, Record, ShellError, Signals, Signature,
-    Span, SyntaxShape, Type,
+    Example, IntoValue, LabeledError, ListStream, PipelineData, Record, ShellError, Signals,
+    Signature, Span, SyntaxShape, Type,
 };
 use tokio::{select, sync::mpsc};
 use tokio_util::sync::CancellationToken;
@@ -25,17 +25,44 @@ impl PluginCommand for Watch {
             .required("bucket", SyntaxShape::String, "Bucket to watch")
             .optional("key", SyntaxShape::String, "The key to watch")
             .input_output_type(Type::Any, Type::List(Type::String.into()))
-            .search_terms(vec![
-                "nats".to_owned(),
-                "kv".to_owned(),
-                "key".to_owned(),
-                "value".to_owned(),
-                "watch".to_owned(),
-            ])
     }
 
     fn description(&self) -> &str {
         "Watch a bucket or key in a bucket"
+    }
+
+    fn search_terms(&self) -> Vec<&str> {
+        vec!["nats", "kv", "key", "value", "watch"]
+    }
+
+    fn examples(&self) -> Vec<Example> {
+        vec![
+            Example {
+                example: "nuts kv watch mybucket",
+                description: "Watch all keys in a bucket",
+                result: Some(
+                    Record::from_iter([
+                        ("mykey".to_owned(), "myvalue".into_value(Span::unknown())),
+                        (
+                            "myotherkey".to_owned(),
+                            "myothervalue".into_value(Span::unknown()),
+                        ),
+                    ])
+                    .into_value(Span::unknown()),
+                ),
+            },
+            Example {
+                example: "nuts kv watch mybucket mykey",
+                description: "Watch a single key in a bucket",
+                result: Some(
+                    Record::from_iter([(
+                        "mykey".to_owned(),
+                        "myvalue".into_value(Span::unknown()),
+                    )])
+                    .into_value(Span::unknown()),
+                ),
+            },
+        ]
     }
 
     fn run(
