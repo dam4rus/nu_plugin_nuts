@@ -3,6 +3,9 @@ name = "nu_plugin_nuts"
 version = "0.1.0"
 edition = "2024"
 keywords = ["nats", "nushell", "nu", "plugin"]
+description = "Blazingly fast Nats client as a nushell plugin"
+license = "MIT"
+license-file = "LICENSE"
 
 [dependencies]
 anyhow = "1"
