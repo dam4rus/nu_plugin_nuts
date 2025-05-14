@@ -1,6 +1,6 @@
 [package]
 name = "nu_plugin_nuts"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 keywords = ["nats", "nushell", "nu", "plugin"]
 description = "Blazingly fast Nats client as a nushell plugin"
@@ -10,9 +10,9 @@ license-file = "LICENSE"
 [dependencies]
 anyhow = "1"
 async-nats = "0.39.0"
-nu-plugin = "0.103.0"
-nu-utils = "0.103.0"
-nu-protocol = { version = "0.103.0", features = ["plugin"] }
+nu-plugin = "0.104.0"
+nu-utils = "0.104.0"
+nu-protocol = { version = "0.104.0", features = ["plugin"] }
 tokio = { version = "1", features = ["rt-multi-thread", "signal"] }
 tokio-stream = "0.1.17"
 futures = "0.3.31"
