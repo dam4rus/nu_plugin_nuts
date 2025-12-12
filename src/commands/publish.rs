@@ -176,7 +176,7 @@ impl Publish {
         value: Value,
     ) -> Result<(), LabeledError> {
         match value {
-            Value::Record { val, internal_span } => {
+            Value::Record { val, internal_span, .. } => {
                 Self::publish_record(client, subject, val, internal_span).await?
             }
             value => {

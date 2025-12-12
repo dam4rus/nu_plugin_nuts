@@ -10,9 +10,9 @@ license-file = "LICENSE"
 [dependencies]
 anyhow = "1"
 async-nats = "0.39.0"
-nu-plugin = "0.104.0"
-nu-utils = "0.104.0"
-nu-protocol = { version = "0.104.0", features = ["plugin"] }
+nu-plugin = "0.109.1"
+nu-utils = "0.109.1"
+nu-protocol = { version = "0.109.1", features = ["plugin"] }
 tokio = { version = "1", features = ["rt-multi-thread", "signal"] }
 tokio-stream = "0.1.17"
 futures = "0.3.31"
