@@ -7,8 +7,20 @@ use nu_protocol::{
 };
 use tokio::{select, sync::mpsc};
 use tokio_util::sync::CancellationToken;
-
+use std::fs;
+use std::io::Write;
+use tokio_util::bytes::Bytes;
 use crate::Nuts;
+
+
+fn save_to_path(bytes: &Bytes, path: &str) -> Result<(), LabeledError> {
+    let mut file = fs::File::create(path)
+        .map_err(|e| LabeledError::new(e.to_string()))?;
+    file.write_all(bytes)
+        .map_err(|e| LabeledError::new(e.to_string()))?;
+
+    Ok(())
+}
 
 pub(crate) struct Subscribe;
 
@@ -23,6 +35,12 @@ impl PluginCommand for Subscribe {
         Signature::build(self.name())
             .required("subject", SyntaxShape::String, "Subject to consume from")
             .switch("binary", "Do not decode binary as string", Some('b'))
+            .named(
+                "save",
+                SyntaxShape::Filepath,
+                "Save output to a file",
+                Some('s'),
+            )
             .input_output_type(Type::Any, Type::String)
             .input_output_type(Type::Any, Type::Binary)
             .category(Category::Generators)
@@ -53,6 +71,8 @@ impl PluginCommand for Subscribe {
     ) -> Result<PipelineData, LabeledError> {
         let subject: String = call.req(0)?;
         let binary_output = call.has_flag("binary")?;
+        let save_path: Option<String> = call.get_flag("save")?; //We will check if its a Some(val)
+        //or None later on.
         let client = plugin.nats.read().unwrap();
         match client.as_ref() {
             Some(client) => {
@@ -93,6 +113,13 @@ impl PluginCommand for Subscribe {
                 let stream_iter = std::iter::repeat_with(move || handle.block_on(rx.recv()))
                     .map_while(move |message| {
                         message.map(|message| {
+                            if let Some(path) = &save_path {
+                                //We obviously want binary output.
+                                let binary = message.payload.clone();
+                                if let Err(e) = save_to_path(&binary, &path) {
+                                    info!("Failed to save the Message: Err: {:?}", e);
+                                };
+                            }
                             if binary_output {
                                 message.payload.into_value(Span::unknown())
                             } else {

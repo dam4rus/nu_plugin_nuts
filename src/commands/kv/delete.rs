@@ -116,7 +116,7 @@ impl Delete {
         value: Value,
     ) -> Result<(), LabeledError> {
         match value {
-            Value::String { val, internal_span } => jetstream
+            Value::String { val, internal_span, .. } => jetstream
                 .get_key_value(bucket)
                 .await
                 .map_err(|error| LabeledError::new(error.to_string()))?
@@ -129,6 +129,7 @@ impl Delete {
             Value::List {
                 vals,
                 internal_span,
+                ..
             } => {
                 let key_value = Arc::new(
                     jetstream
