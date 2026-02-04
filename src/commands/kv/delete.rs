@@ -38,7 +38,7 @@ impl PluginCommand for Delete {
         vec!["nats", "kv", "key", "value", "delete"]
     }
 
-    fn examples(&self) -> Vec<Example> {
+    fn examples(&self) -> Vec<Example<'_>> {
         vec![
             Example {
                 example: "nuts kv del my-bucket",
@@ -116,7 +116,9 @@ impl Delete {
         value: Value,
     ) -> Result<(), LabeledError> {
         match value {
-            Value::String { val, internal_span, .. } => jetstream
+            Value::String {
+                val, internal_span, ..
+            } => jetstream
                 .get_key_value(bucket)
                 .await
                 .map_err(|error| LabeledError::new(error.to_string()))?

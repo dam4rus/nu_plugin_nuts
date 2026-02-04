@@ -30,7 +30,7 @@ impl PluginCommand for Put {
         vec!["nats", "kv", "key", "value", "put"]
     }
 
-    fn examples(&self) -> Vec<Example> {
+    fn examples(&self) -> Vec<Example<'_>> {
         vec![Example {
             example: "{key: value, otherkey: othervalue} | nuts kv put mybucket",
             description: "Put all key value pairs in the record into a bucket",

@@ -66,7 +66,7 @@ impl PluginCommand for Publish {
         vec!["nats", "pub", "publish"]
     }
 
-    fn examples(&self) -> Vec<Example> {
+    fn examples(&self) -> Vec<Example<'_>> {
         vec![
             Example {
                 example: "'my message' | nuts pub subject",
@@ -176,9 +176,9 @@ impl Publish {
         value: Value,
     ) -> Result<(), LabeledError> {
         match value {
-            Value::Record { val, internal_span, .. } => {
-                Self::publish_record(client, subject, val, internal_span).await?
-            }
+            Value::Record {
+                val, internal_span, ..
+            } => Self::publish_record(client, subject, val, internal_span).await?,
             value => {
                 let payload = value.clone().coerce_into_binary()?;
                 client

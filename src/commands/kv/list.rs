@@ -32,7 +32,7 @@ impl PluginCommand for List {
         vec!["nats", "kv", "key", "value", "list"]
     }
 
-    fn examples(&self) -> Vec<Example> {
+    fn examples(&self) -> Vec<Example<'_>> {
         vec![
             Example {
                 example: "nuts kv list",

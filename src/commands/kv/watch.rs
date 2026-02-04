@@ -35,7 +35,7 @@ impl PluginCommand for Watch {
         vec!["nats", "kv", "key", "value", "watch"]
     }
 
-    fn examples(&self) -> Vec<Example> {
+    fn examples(&self) -> Vec<Example<'_>> {
         vec![
             Example {
                 example: "nuts kv watch mybucket",
